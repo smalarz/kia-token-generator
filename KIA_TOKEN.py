@@ -51,7 +51,7 @@ def main():
             wait = WebDriverWait(driver, 30) # 30-second timeout
             wait.until(lambda driver: 'code=' in driver.current_url or 'error' in driver.current_url)
         except TimeoutException:
-            print("❌ Timed out waiting for authorization code redirect. The login page may have closed too quickly.")
+            print("❌ Timed out waiting for authorization code redirect. Please ensure you complete the login process within 30 seconds.")
             return
 
         current_url = driver.current_url
