@@ -47,8 +47,12 @@ def main():
         driver.get(REDIRECT_URL)
 
         # Wait for URL to change and contain 'code' parameter
-        wait = WebDriverWait(driver, 30) # 30-second timeout
-        wait.until(lambda driver: 'code=' in driver.current_url or 'error' in driver.current_url)
+        try:
+            wait = WebDriverWait(driver, 30) # 30-second timeout
+            wait.until(lambda driver: 'code=' in driver.current_url or 'error' in driver.current_url)
+        except TimeoutException:
+            print("❌ Timed out waiting for authorization code redirect. The login page may have closed too quickly.")
+            return
 
         current_url = driver.current_url
         print(f"\nCurrent URL after redirect: {current_url}\n")
@@ -76,15 +80,7 @@ def main():
         if not code_match:
             print(f"❌ Could not find authorization code in URL!")
             print(f"URL was: {current_url}")
-            print(f"\n⚠️ Debug: Waiting a bit longer in case page is still loading...")
-            import time
-            time.sleep(3)
-            current_url = driver.current_url
-            print(f"URL after waiting: {current_url}")
-            code_match = re.search(r'code=([^&]+)', current_url)
-            if not code_match:
-                print(f"❌ Still no code found. Exiting.")
-                return
+            return
 
         code = code_match.group(1)
         print(f"✅ Authorization code extracted: {code[:20]}...")
@@ -111,7 +107,7 @@ def main():
                     print(f"❌ Refresh token not found in response!")
                     print(f"Response: {tokens}")
         else:
-            print(f"\n❌ Error getting tokens from der API!")
+            print(f"\n❌ Error getting tokens from the API!")
             print(f"Status code: {response.status_code}")
             print(f"Response: {response.text}")
 
