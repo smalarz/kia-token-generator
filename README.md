@@ -42,10 +42,12 @@ The script will:
 1. Create a `.venv` and install dependencies automatically (first run only)
 2. Open Chrome with the Kia login page
 3. Wait for you to log in and complete the CAPTCHA
-4. Ask you to confirm login is done
-5. Automatically capture the authorization code
-6. Exchange it for a refresh token
-7. Display the token
+4. After successful login, the browser will show `java.util.NoSuchElementException` — **this is expected and means login was successful**
+5. Go back to the terminal and press **Y** to confirm
+6. The script automatically captures the authorization code
+7. Exchanges it for a refresh token and displays it
+
+> **💡 TL;DR:** Run the script → log in in Chrome → see `java.util.NoSuchElementException` → go back to terminal → press **Y** → done.
 
 ### Command-line options
 
@@ -86,9 +88,11 @@ If you run Home Assistant OS (HAOS) or Home Assistant in Docker, you **do not** 
 1. On your **PC/Mac** (not on HA), download `KIA_TOKEN.py`
 2. Run `python3 KIA_TOKEN.py` (or `python KIA_TOKEN.py` on Windows)
 3. Log in to Kia in the Chrome window that opens
-4. Copy the refresh token from the terminal output
-5. In HA: **Settings → Devices & Services → Add Integration → Kia Uvo**
-6. Paste the refresh token as the password
+4. Wait for `java.util.NoSuchElementException` to appear in the browser — this confirms login success
+5. Go back to the terminal and press **Y**
+6. Copy the refresh token from the terminal output
+7. In HA: **Settings → Devices & Services → Add Integration → Kia Uvo**
+8. Paste the refresh token as the password
 
 You do **not** need to modify any files inside HA containers or replace `KiaUvoApiEU.py` if you are using the latest version of the kia_uvo integration from HACS.
 
@@ -110,6 +114,10 @@ You do **not** need to modify any files inside HA containers or replace `KiaUvoA
 
 ## Troubleshooting / FAQ
 
+### Browser shows `java.util.NoSuchElementException` after login
+
+**This is normal and expected.** It means your login was successful. The error comes from Kia's Java backend — it has nothing to do with your script or your setup. When you see this message, simply go back to the terminal and press **Y** to continue.
+
 ### "Chrome not found"
 
 The script auto-detects Chrome in standard locations. If you installed Chrome in a non-standard path, add it to your system PATH or create a symlink.
@@ -118,11 +126,15 @@ The script auto-detects Chrome in standard locations. If you installed Chrome in
 
 **Most common cause:** the user-agent was not applied correctly, or the login was not fully completed.
 
-The script sets the user-agent automatically via Chrome launch flags. If it still fails:
+The script sets the user-agent automatically via Chrome launch flags. It also prints `[DEBUG]` lines showing which URLs it finds and whether they match the expected redirect prefix (`prd.eu-ccapi.kia.com:8080`). If it still fails:
 
-- Make sure you **fully complete** the login (CAPTCHA + credentials) and wait until the Kia website loads
+- Make sure you **fully complete** the login (CAPTCHA + credentials) and wait until `java.util.NoSuchElementException` appears
 - Try a different network (VPN/firewall may block `prd.eu-ccapi.kia.com:8080`)
 - Close **all** other Chrome windows before running the script (they may interfere with CDP)
+
+### Warning: "Got code from unexpected URL"
+
+The script expects the authorization code to come from the Kia API redirect (`prd.eu-ccapi.kia.com:8080`). If the code is found in a different URL (e.g. the login redirect to `kia.com`), the script will warn you but still attempt the token exchange. If it fails after this warning, run the script again — the OAuth redirect may not have completed properly.
 
 ### Error: "Existing Chrome debug session on port 9222"
 
@@ -180,7 +192,7 @@ The Selenium-based `KiaFetchApiTokensSelenium.py` requires matching ChromeDriver
 1. Launches Chrome with `--remote-debugging-port` and a mobile user-agent (required by Kia's API)
 2. Opens the Kia login page — you log in manually (CAPTCHA cannot be automated)
 3. After login, navigates to the OAuth authorize endpoint via CDP WebSocket
-4. Captures the redirect URL containing the authorization `code`
+4. Scans all open tabs for a redirect URL containing the authorization `code`, prioritizing the expected Kia API endpoint (`prd.eu-ccapi.kia.com:8080`)
 5. Exchanges the code for `access_token` + `refresh_token` via HTTP POST
 
 ## License

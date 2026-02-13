@@ -260,6 +260,8 @@ def cdp_port_alive(port: int) -> bool:
     try:
         r = requests.get(f"http://localhost:{port}/json", timeout=2)
         return r.status_code == 200
+    except requests.exceptions.Timeout:
+        return False
     except Exception:
         return False
 
@@ -374,8 +376,11 @@ def cdp_navigate(port: int, url: str) -> bool:
         return False
 
 
-def cdp_find_code_url(port: int) -> Optional[str]:
-    """Search all CDP page targets for a URL containing 'code='."""
+def cdp_find_code_url(port: int, preferred_prefix: Optional[str] = None, debug: bool = False) -> Optional[str]:
+    """Search all CDP page targets for a URL containing 'code='.
+
+    If preferred_prefix is provided, prefer URLs that start with it.
+    """
     import requests, websocket as ws_mod  # noqa: E401
 
     try:
@@ -392,16 +397,36 @@ def cdp_find_code_url(port: int) -> Optional[str]:
         targets = result.get("result", {}).get("targetInfos", [])
         pages = [t for t in targets if t.get("type") == "page"]
 
+        preferred = None
+        fallback = None
+
         for t in pages:
             url = t.get("url", "")
-            if "code=" in url:
-                return url
+            if debug and "code=" in url:
+                print(f"[DEBUG] Found code in URL: {url[:80]}...")
+            if "code=" not in url:
+                continue
+            if preferred_prefix and url.startswith(preferred_prefix):
+                if debug:
+                    print(f"[DEBUG] Matched preferred prefix: {preferred_prefix[:50]}")
+                preferred = url
+                break
+            if not fallback:
+                fallback = url
+
+        if preferred:
+            return preferred
+        if fallback:
+            if debug:
+                print(f"[DEBUG] Using fallback URL: {fallback[:80]}...")
+            return fallback
 
         # fallback: return first page
         if pages:
             return pages[0].get("url")
-    except Exception:
-        pass
+    except Exception as e:
+        if debug:
+            print(f"[DEBUG] CDP error: {e}")
     return None
 
 
@@ -528,19 +553,25 @@ def main() -> None:
 
     # Wait for redirect with authorization code
     print("[INFO] Waiting for authorization code...")
+    print(f"[DEBUG] Looking for redirect to: {REDIRECT_URL_FINAL}")
     code = None
     for i in range(REDIRECT_TIMEOUT):
-        url = cdp_find_code_url(port)
+        url = cdp_find_code_url(port, preferred_prefix=REDIRECT_URL_FINAL, debug=(i == 0 or i % 10 == 0))
         if url:
             code = extract_auth_code(url)
             if code:
+                # Verify the URL matches the expected redirect
+                if not url.startswith(REDIRECT_URL_FINAL):
+                    print(f"[WARN] Got code from unexpected URL: {url[:80]}...")
+                    print(f"[WARN] Expected URL to start with: {REDIRECT_URL_FINAL}")
+                    print(f"[WARN] This may cause token exchange to fail. Continuing anyway...")
                 break
         time.sleep(1)
         if i > 0 and i % 10 == 0:
             print(f"  Still waiting... ({i}s)")
 
     if not code:
-        final_url = cdp_find_code_url(port) or "(unknown)"
+        final_url = cdp_find_code_url(port, preferred_prefix=REDIRECT_URL_FINAL, debug=True) or "(unknown)"
         print(f"[ERROR] Authorization code not found in URL.")
         print(f"  Last URL: {final_url}")
         print()
@@ -548,6 +579,7 @@ def main() -> None:
         print("  - Login was not fully completed")
         print("  - Network/firewall blocking prd.eu-ccapi.kia.com:8080")
         print("  - Try a different network (e.g. mobile hotspot)")
+        print("  - The OAuth redirect failed (check browser console for errors)")
         chrome.terminate()
         sys.exit(1)
 
