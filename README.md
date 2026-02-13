@@ -8,6 +8,9 @@ Generate a refresh token for the **Kia Connect API (Europe)** to use with the [k
 ## What changed in v2.0
 
 - **No more Selenium / ChromeDriver dependency** — uses Chrome's native DevTools Protocol (CDP) over WebSocket
+- **Automatic login detection** — detects `java.util.NoSuchElementException` in the browser and proceeds automatically (no manual confirmation needed)
+- **Browser closes automatically** — as soon as the authorization code is captured, Chrome closes so it doesn't cover the terminal output
+- **Window stays open** — after finishing, the script waits for Enter so the CMD window doesn't disappear (useful for `.exe` users)
 - **Automatic locale detection** — login page language matches your system (override with `--locale pl`)
 - **Dynamic state parameter** — no more hardcoded timestamps that could expire
 - **Auto-install dependencies** — creates a local `.venv` and installs `requests` + `websocket-client` automatically
@@ -23,9 +26,17 @@ Generate a refresh token for the **Kia Connect API (Europe)** to use with the [k
 
 That's it. No ChromeDriver, no Selenium, no manual pip installs.
 
+If you use the `.exe` version — you only need Chrome. Python is not required.
+
 ## Quick start
 
-### Windows
+### Windows (EXE — no Python needed)
+
+Download `KIA_TOKEN.exe` from the [Releases](https://github.com/smalarz/kia-token-generator/releases) page and double-click it. No Python installation required.
+
+> **Note:** Windows Defender / SmartScreen may warn about an unknown publisher. This is normal for unsigned executables. Click **"More info" → "Run anyway"**. You can verify the source code in this repository.
+
+### Windows (Python)
 
 ```
 python KIA_TOKEN.py
@@ -37,17 +48,20 @@ python KIA_TOKEN.py
 python3 KIA_TOKEN.py
 ```
 
-The script will:
+### What happens when you run it
 
-1. Create a `.venv` and install dependencies automatically (first run only)
-2. Open Chrome with the Kia login page
-3. Wait for you to log in and complete the CAPTCHA
-4. After successful login, the browser will show `java.util.NoSuchElementException` — **this is expected and means login was successful**
-5. Go back to the terminal and press **Y** to confirm
-6. The script automatically captures the authorization code
-7. Exchanges it for a refresh token and displays it
+1. First run only: creates a `.venv` and installs dependencies automatically
+2. Chrome opens with the Kia login page
+3. You log in and complete the CAPTCHA
+4. The script **automatically detects** that login succeeded (it watches for `java.util.NoSuchElementException` in the browser — this is a normal Kia backend message)
+5. Chrome closes automatically
+6. The script exchanges the authorization code for a refresh token
+7. Token is displayed in the terminal — copy it
+8. Press Enter to close the window
 
-> **💡 TL;DR:** Run the script → log in in Chrome → see `java.util.NoSuchElementException` → go back to terminal → press **Y** → done.
+> **💡 TL;DR:** Run the script → log in in Chrome → the script does the rest → copy the token.
+>
+> You can also press **Enter** in the terminal at any time to skip waiting for auto-detection.
 
 ### Command-line options
 
@@ -85,14 +99,13 @@ If you run Home Assistant OS (HAOS) or Home Assistant in Docker, you **do not** 
 
 ### Step by step for HAOS users
 
-1. On your **PC/Mac** (not on HA), download `KIA_TOKEN.py`
-2. Run `python3 KIA_TOKEN.py` (or `python KIA_TOKEN.py` on Windows)
+1. On your **PC/Mac** (not on HA), download `KIA_TOKEN.exe` or `KIA_TOKEN.py`
+2. Run it (double-click the `.exe`, or `python KIA_TOKEN.py` in terminal)
 3. Log in to Kia in the Chrome window that opens
-4. Wait for `java.util.NoSuchElementException` to appear in the browser — this confirms login success
-5. Go back to the terminal and press **Y**
-6. Copy the refresh token from the terminal output
-7. In HA: **Settings → Devices & Services → Add Integration → Kia Uvo**
-8. Paste the refresh token as the password
+4. The script automatically detects login, closes the browser, and shows the token
+5. Copy the refresh token from the terminal output
+6. In HA: **Settings → Devices & Services → Add Integration → Kia Uvo**
+7. Paste the refresh token as the password
 
 You do **not** need to modify any files inside HA containers or replace `KiaUvoApiEU.py` if you are using the latest version of the kia_uvo integration from HACS.
 
@@ -112,11 +125,82 @@ You do **not** need to modify any files inside HA containers or replace `KiaUvoA
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## Building your own EXE (for nerds 🤓)
+
+Don't want to install Python? Want a single `.exe` you can double-click and share with friends? You can build it yourself. Here's how — step by step, even if you've never done this before.
+
+### What you need to install first
+
+**1. Python** (only needed to build the `.exe` — not needed to run it afterwards)
+
+- Go to [python.org/downloads](https://www.python.org/downloads/) and download the latest Python 3
+- Run the installer
+- ⚠️ **IMPORTANT: Check the box that says "Add Python to PATH"** at the bottom of the first screen — without this, nothing will work
+- Click "Install Now" and wait for it to finish
+- To verify: open **Command Prompt** (press `Win+R`, type `cmd`, press Enter) and type: `python --version`. You should see something like `Python 3.12.x`
+
+**2. The script files** from this repository
+
+- On this GitHub page, click the green **Code** button → **Download ZIP**
+- Unzip the downloaded file to any folder (e.g. `C:\Users\YourName\Downloads\kia-token-generator`)
+
+### Option A: Double-click to build (easiest)
+
+1. Open the unzipped folder — you should see `KIA_TOKEN.py` and `build_exe.bat`
+2. **Double-click `build_exe.bat`**
+3. A black command window will open and start doing stuff — this is normal, don't close it
+4. Wait about 1–2 minutes
+5. When you see "Build complete!", you're done
+6. Open the `dist` subfolder — there's your `KIA_TOKEN.exe` 🎉
+7. You can copy this `.exe` anywhere — it's completely standalone, no Python needed to run it
+
+### Option B: Type it yourself
+
+If `build_exe.bat` doesn't work, or you like typing:
+
+1. Open **Command Prompt** (`Win+R` → type `cmd` → press Enter)
+2. Navigate to the folder with `KIA_TOKEN.py`:
+   ```
+   cd C:\Users\YourName\Downloads\kia-token-generator
+   ```
+   (replace with your actual path)
+3. Run these commands one by one:
+   ```
+   python -m venv .build_venv
+   .build_venv\Scripts\activate
+   pip install pyinstaller requests websocket-client
+   pyinstaller --onefile --name KIA_TOKEN --clean --noconfirm KIA_TOKEN.py
+   ```
+4. When it finishes, your `.exe` is in the `dist` folder
+
+### Option C: Let GitHub build it for you
+
+If you fork this repository on GitHub, the included GitHub Actions workflow (`.github/workflows/build-exe.yml`) builds the `.exe` automatically:
+
+1. Fork this repo
+2. Push a tag: `git tag v2.0.0 && git push --tags`
+3. Go to **Actions** tab — wait for the build to finish
+4. The `.exe` appears in the **Releases** section
+
+### Build troubleshooting
+
+**"python is not recognized as an internal or external command"**
+
+You didn't check "Add Python to PATH" during installation. The easiest fix: reinstall Python from [python.org/downloads](https://www.python.org/downloads/) and this time **check the PATH checkbox**.
+
+**SmartScreen / Windows Defender warning when running the built .exe**
+
+This happens because the `.exe` is not digitally signed (signing costs money). Click **"More info"** → **"Run anyway"**. The source code is right here in this repository — you built it yourself.
+
+**Antivirus flags the .exe as suspicious**
+
+PyInstaller executables are sometimes falsely flagged by antivirus software. This is a well-known issue with PyInstaller, not a real threat. You can add an exception in your antivirus settings, or skip the `.exe` and just run `python KIA_TOKEN.py` directly.
+
 ## Troubleshooting / FAQ
 
 ### Browser shows `java.util.NoSuchElementException` after login
 
-**This is normal and expected.** It means your login was successful. The error comes from Kia's Java backend — it has nothing to do with your script or your setup. When you see this message, simply go back to the terminal and press **Y** to continue.
+**This is normal and expected.** It means your login was successful. The error comes from Kia's Java backend — it has nothing to do with your script or your setup. The script detects this automatically and proceeds to fetch the token. If auto-detection doesn't trigger, press **Enter** in the terminal to continue manually.
 
 ### "Chrome not found"
 
@@ -191,9 +275,11 @@ The Selenium-based `KiaFetchApiTokensSelenium.py` requires matching ChromeDriver
 
 1. Launches Chrome with `--remote-debugging-port` and a mobile user-agent (required by Kia's API)
 2. Opens the Kia login page — you log in manually (CAPTCHA cannot be automated)
-3. After login, navigates to the OAuth authorize endpoint via CDP WebSocket
-4. Scans all open tabs for a redirect URL containing the authorization `code`, prioritizing the expected Kia API endpoint (`prd.eu-ccapi.kia.com:8080`)
-5. Exchanges the code for `access_token` + `refresh_token` via HTTP POST
+3. Monitors the browser via CDP — when it detects `java.util.NoSuchElementException` in the page content (= login complete), it proceeds automatically
+4. Navigates to the OAuth authorize endpoint via CDP WebSocket
+5. Scans all open tabs for a redirect URL containing the authorization `code`, prioritizing the expected Kia API endpoint (`prd.eu-ccapi.kia.com:8080`)
+6. Closes the browser (no longer needed)
+7. Exchanges the code for `access_token` + `refresh_token` via HTTP POST
 
 ## License
 

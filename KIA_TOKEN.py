@@ -352,6 +352,53 @@ def cdp_get_targets(port: int) -> list:
         return []
 
 
+def cdp_check_login_complete(port: int) -> bool:
+    """Check if any open tab contains signs of completed login.
+
+    Looks for:
+    - java.util.NoSuchElementException in page body (Kia backend error after login)
+    - Redirect URL containing 'code=' (direct OAuth success)
+    - Landing on kia.com after login (generic success)
+    """
+    import requests, websocket as ws_mod  # noqa: E401
+
+    try:
+        targets = requests.get(f"http://localhost:{port}/json", timeout=5).json()
+    except Exception:
+        return False
+
+    pages = [t for t in targets if t.get("type") == "page"]
+
+    for page in pages:
+        url = page.get("url", "")
+        ws_url = page.get("webSocketDebuggerUrl")
+
+        # Quick check: code already in URL means login + redirect done
+        if "code=" in url:
+            return True
+
+        # Check page content via CDP Runtime.evaluate
+        if not ws_url:
+            continue
+        try:
+            conn = ws_mod.create_connection(ws_url, timeout=5)
+            conn.send(json.dumps({
+                "id": 1,
+                "method": "Runtime.evaluate",
+                "params": {"expression": "document.body ? document.body.innerText : ''"}
+            }))
+            result = json.loads(conn.recv())
+            conn.close()
+
+            text = result.get("result", {}).get("result", {}).get("value", "")
+            if "NoSuchElementException" in text:
+                return True
+        except Exception:
+            continue
+
+    return False
+
+
 def cdp_navigate(port: int, url: str) -> bool:
     """Open a new tab navigating to the given URL via CDP."""
     import requests, websocket as ws_mod  # noqa: E401
@@ -529,20 +576,52 @@ def main() -> None:
     print("  A Chrome window has opened with the Kia login page.")
     print("  1. Log in with your Kia Connect credentials")
     print("  2. Complete the CAPTCHA")
-    print("  3. Wait until the Kia website loads after login")
+    print("  3. The script will detect login automatically")
     print("=" * 60)
     print()
+    print("[INFO] Waiting for login (up to 5 minutes)...")
+    print("  (You can also press Enter here to continue manually)\n")
 
-    try:
-        answer = input("Have you completed the login? (Y/n): ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
+    # Auto-detect login completion by polling CDP for
+    # java.util.NoSuchElementException or code= in URL.
+    # Simultaneously accept Enter as manual override.
+    login_detected = False
+    import select as _select
+
+    for tick in range(LOGIN_TIMEOUT):
+        # Check for manual Enter (non-blocking)
+        if sys.platform == "win32":
+            import msvcrt
+            if msvcrt.kbhit():
+                msvcrt.getwch()  # consume the keypress
+                print("[INFO] Manual confirmation received.")
+                login_detected = True
+                break
+        else:
+            ready, _, _ = _select.select([sys.stdin], [], [], 0)
+            if ready:
+                sys.stdin.readline()
+                print("[INFO] Manual confirmation received.")
+                login_detected = True
+                break
+
+        # Check CDP for login signals
+        if cdp_check_login_complete(port):
+            print("\n[OK] Login detected automatically! Continuing...")
+            login_detected = True
+            break
+
+        # Progress indicator
+        if tick > 0 and tick % 15 == 0:
+            mins_left = (LOGIN_TIMEOUT - tick) // 60
+            print(f"  Still waiting for login... ({mins_left}m remaining)")
+
+        time.sleep(1)
+
+    if not login_detected:
+        print("[ERROR] Login timeout (5 minutes). Please try again.")
         chrome.terminate()
         sys.exit(1)
-
-    if answer and answer not in ("y", "yes", ""):
-        print("[INFO] Cancelled.")
-        chrome.terminate()
-        sys.exit(0)
 
     # Navigate to OAuth redirect
     print("\n[INFO] Navigating to OAuth redirect URL...")
@@ -585,11 +664,8 @@ def main() -> None:
 
     print(f"[OK] Authorization code: {code[:30]}...")
 
-    # Exchange code for tokens
-    print("\n[INFO] Exchanging code for tokens...")
-    tokens = exchange_code_for_token(code)
-
-    # Close Chrome
+    # Close Chrome — no longer needed, code has been captured
+    print("[INFO] Closing browser...")
     chrome.terminate()
     try:
         chrome.wait(timeout=5)
@@ -600,6 +676,10 @@ def main() -> None:
     profile_dir = Path(tempfile.gettempdir()) / "kia-token-chrome-profile"
     if profile_dir.exists():
         shutil.rmtree(profile_dir, ignore_errors=True)
+
+    # Exchange code for tokens
+    print("[INFO] Exchanging code for tokens...")
+    tokens = exchange_code_for_token(code)
 
     if not tokens:
         print("[ERROR] Token exchange failed after all retries.")
@@ -650,4 +730,18 @@ def main() -> None:
 
 if __name__ == "__main__":
     ensure_dependencies()
-    main()
+    _exit_code = 0
+    try:
+        main()
+    except SystemExit as e:
+        _exit_code = e.code if e.code is not None else 0
+    except Exception as e:
+        print(f"\n[ERROR] Unexpected error: {e}")
+        _exit_code = 1
+    finally:
+        print()
+        try:
+            input("Press Enter to exit...")
+        except (EOFError, KeyboardInterrupt):
+            pass
+        sys.exit(_exit_code)
