@@ -41,7 +41,7 @@ if sys.version_info < (3, 8):
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-SCRIPT_VERSION = "2.0.0"
+SCRIPT_VERSION = "2.5.1"
 
 CLIENT_ID = "fdc85c00-0a2f-4c64-bcb4-2cfb1500730a"
 CLIENT_ID_LOGIN = "peukiaidm-online-sales"
