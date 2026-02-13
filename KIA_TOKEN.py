@@ -64,7 +64,7 @@ SUPPORTED_LOCALES = [
 CDP_PORT = 9222
 CHROME_STARTUP_TIMEOUT = 20
 LOGIN_TIMEOUT = 300  # 5 minutes
-REDIRECT_TIMEOUT = 30
+REDIRECT_TIMEOUT = 60
 TOKEN_EXCHANGE_RETRIES = 3
 
 # ---------------------------------------------------------------------------
@@ -426,7 +426,9 @@ def cdp_navigate(port: int, url: str) -> bool:
 def cdp_find_code_url(port: int, preferred_prefix: Optional[str] = None, debug: bool = False) -> Optional[str]:
     """Search all CDP page targets for a URL containing 'code='.
 
-    If preferred_prefix is provided, prefer URLs that start with it.
+    If preferred_prefix is provided, ONLY return URLs that start with it.
+    This prevents capturing the authorization code from the wrong redirect
+    (e.g. login redirect to kia.com instead of OAuth redirect to prd.eu-ccapi.kia.com).
     """
     import requests, websocket as ws_mod  # noqa: E401
 
@@ -444,33 +446,24 @@ def cdp_find_code_url(port: int, preferred_prefix: Optional[str] = None, debug: 
         targets = result.get("result", {}).get("targetInfos", [])
         pages = [t for t in targets if t.get("type") == "page"]
 
-        preferred = None
-        fallback = None
-
         for t in pages:
             url = t.get("url", "")
-            if debug and "code=" in url:
-                print(f"[DEBUG] Found code in URL: {url[:80]}...")
             if "code=" not in url:
                 continue
-            if preferred_prefix and url.startswith(preferred_prefix):
-                if debug:
-                    print(f"[DEBUG] Matched preferred prefix: {preferred_prefix[:50]}")
-                preferred = url
-                break
-            if not fallback:
-                fallback = url
-
-        if preferred:
-            return preferred
-        if fallback:
             if debug:
-                print(f"[DEBUG] Using fallback URL: {fallback[:80]}...")
-            return fallback
+                print(f"[DEBUG] Found code in URL: {url[:100]}...")
+            if preferred_prefix:
+                if url.startswith(preferred_prefix):
+                    if debug:
+                        print(f"[DEBUG] ✓ Matches expected prefix")
+                    return url
+                else:
+                    if debug:
+                        print(f"[DEBUG] ✗ Skipping — wrong prefix (expected: {preferred_prefix[:50]})")
+                    continue
+            else:
+                return url
 
-        # fallback: return first page
-        if pages:
-            return pages[0].get("url")
     except Exception as e:
         if debug:
             print(f"[DEBUG] CDP error: {e}")
@@ -639,26 +632,19 @@ def main() -> None:
         if url:
             code = extract_auth_code(url)
             if code:
-                # Verify the URL matches the expected redirect
-                if not url.startswith(REDIRECT_URL_FINAL):
-                    print(f"[WARN] Got code from unexpected URL: {url[:80]}...")
-                    print(f"[WARN] Expected URL to start with: {REDIRECT_URL_FINAL}")
-                    print(f"[WARN] This may cause token exchange to fail. Continuing anyway...")
                 break
         time.sleep(1)
         if i > 0 and i % 10 == 0:
             print(f"  Still waiting... ({i}s)")
 
     if not code:
-        final_url = cdp_find_code_url(port, preferred_prefix=REDIRECT_URL_FINAL, debug=True) or "(unknown)"
-        print(f"[ERROR] Authorization code not found in URL.")
-        print(f"  Last URL: {final_url}")
+        print(f"[ERROR] Authorization code not found.")
         print()
         print("  Possible causes:")
-        print("  - Login was not fully completed")
+        print("  - The OAuth redirect did not complete (code was only in the login URL, not the API redirect)")
         print("  - Network/firewall blocking prd.eu-ccapi.kia.com:8080")
         print("  - Try a different network (e.g. mobile hotspot)")
-        print("  - The OAuth redirect failed (check browser console for errors)")
+        print("  - Close all other Chrome windows and try again")
         chrome.terminate()
         sys.exit(1)
 
