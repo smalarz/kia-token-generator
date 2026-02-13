@@ -5,7 +5,7 @@ Generate a refresh token for the **Kia Connect API (Europe)** to use with the [k
 > **⚠️ This tool works ONLY for European Kia accounts.**  
 > For Hyundai EU, see: [hyundai_kia_connect_api#925](https://github.com/Hyundai-Kia-Connect/hyundai_kia_connect_api/issues/925)
 
-## What changed in v2.0
+## What changed in v2.5
 
 - **No more Selenium / ChromeDriver dependency** — uses Chrome's native DevTools Protocol (CDP) over WebSocket
 - **Automatic login detection** — detects `java.util.NoSuchElementException` in the browser and proceeds automatically (no manual confirmation needed)
