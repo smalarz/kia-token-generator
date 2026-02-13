@@ -5,12 +5,18 @@ Generate a refresh token for the **Kia Connect API (Europe)** to use with the [k
 > **⚠️ This tool works ONLY for European Kia accounts.**  
 > For Hyundai EU, see: [hyundai_kia_connect_api#925](https://github.com/Hyundai-Kia-Connect/hyundai_kia_connect_api/issues/925)
 
-## What changed in v2.5
+## What changed in v2.5.1
 
-- **No more Selenium / ChromeDriver dependency** — uses Chrome's native DevTools Protocol (CDP) over WebSocket
-- **Automatic login detection** — detects `java.util.NoSuchElementException` in the browser and proceeds automatically (no manual confirmation needed)
+- **Fixed: "Mismatched token redirect uri" (HTTP 400)** — the script was incorrectly capturing the authorization code from the login redirect URL (`kia.com`) instead of the OAuth redirect URL (`prd.eu-ccapi.kia.com`). Now it strictly waits for the correct redirect and ignores codes from wrong URLs
+- **Automatic login detection** — detects `java.util.NoSuchElementException` in the browser via CDP and proceeds automatically (no more manual "Y" confirmation)
 - **Browser closes automatically** — as soon as the authorization code is captured, Chrome closes so it doesn't cover the terminal output
 - **Window stays open** — after finishing, the script waits for Enter so the CMD window doesn't disappear (useful for `.exe` users)
+- **Redirect timeout increased** from 30s to 60s — the OAuth redirect to `prd.eu-ccapi.kia.com:8080` can be slow on some networks
+- **EXE support** — can be built as a standalone `.exe` with PyInstaller (no Python needed to run)
+
+### Earlier changes (v2.0)
+
+- **No more Selenium / ChromeDriver dependency** — uses Chrome's native DevTools Protocol (CDP) over WebSocket
 - **Automatic locale detection** — login page language matches your system (override with `--locale pl`)
 - **Dynamic state parameter** — no more hardcoded timestamps that could expire
 - **Auto-install dependencies** — creates a local `.venv` and installs `requests` + `websocket-client` automatically
@@ -215,10 +221,6 @@ The script sets the user-agent automatically via Chrome launch flags. It also pr
 - Make sure you **fully complete** the login (CAPTCHA + credentials) and wait until `java.util.NoSuchElementException` appears
 - Try a different network (VPN/firewall may block `prd.eu-ccapi.kia.com:8080`)
 - Close **all** other Chrome windows before running the script (they may interfere with CDP)
-
-### Warning: "Got code from unexpected URL"
-
-The script expects the authorization code to come from the Kia API redirect (`prd.eu-ccapi.kia.com:8080`). If the code is found in a different URL (e.g. the login redirect to `kia.com`), the script will warn you but still attempt the token exchange. If it fails after this warning, run the script again — the OAuth redirect may not have completed properly.
 
 ### Error: "Existing Chrome debug session on port 9222"
 
