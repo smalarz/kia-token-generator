@@ -41,7 +41,7 @@ if sys.version_info < (3, 8):
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-SCRIPT_VERSION = "2.5.1"
+SCRIPT_VERSION = "2.5.2"
 
 CLIENT_ID = "fdc85c00-0a2f-4c64-bcb4-2cfb1500730a"
 CLIENT_ID_LOGIN = "peukiaidm-online-sales"
@@ -377,6 +377,10 @@ def cdp_check_login_complete(port: int) -> bool:
         if "code=" in url:
             return True
 
+        # Landing on www.kia.com (but not the idp login page) means login succeeded
+        if "www.kia.com" in url and "idpconnect" not in url and "login" not in url:
+            return True
+
         # Check page content via CDP Runtime.evaluate
         if not ws_url:
             continue
@@ -400,24 +404,30 @@ def cdp_check_login_complete(port: int) -> bool:
 
 
 def cdp_navigate(port: int, url: str) -> bool:
-    """Open a new tab navigating to the given URL via CDP."""
+    """Navigate the existing Chrome tab to the given URL via CDP.
+
+    Uses Page.navigate on the first open page tab so that session cookies
+    established during login are preserved (important on macOS).
+    """
     import requests, websocket as ws_mod  # noqa: E401
 
     try:
-        info = requests.get(f"http://localhost:{port}/json/version", timeout=5).json()
-        browser_ws = info.get("webSocketDebuggerUrl")
-        if not browser_ws:
+        targets = requests.get(f"http://localhost:{port}/json", timeout=5).json()
+        pages = [t for t in targets if t.get("type") == "page"]
+        if not pages:
             return False
-
-        conn = ws_mod.create_connection(browser_ws, timeout=10)
+        ws_url = pages[0].get("webSocketDebuggerUrl")
+        if not ws_url:
+            return False
+        conn = ws_mod.create_connection(ws_url, timeout=10)
         conn.send(json.dumps({
             "id": 1,
-            "method": "Target.createTarget",
+            "method": "Page.navigate",
             "params": {"url": url},
         }))
-        result = json.loads(conn.recv())
+        conn.recv()
         conn.close()
-        return "result" in result and "targetId" in result["result"]
+        return True
     except Exception as e:
         print(f"[WARN] CDP navigation failed: {e}")
         return False
@@ -483,6 +493,7 @@ def extract_auth_code(url: str) -> Optional[str]:
     # Generic fallback
     m = re.search(r"code=([^&]+)", url)
     if m:
+        print("[WARN] Auth code format unexpected — using generic extraction")
         return m.group(1)
     return None
 
@@ -582,6 +593,11 @@ def main() -> None:
     import select as _select
 
     for tick in range(LOGIN_TIMEOUT):
+        # Check if Chrome was closed by the user
+        if chrome.poll() is not None:
+            print("[ERROR] Chrome was closed unexpectedly.")
+            sys.exit(1)
+
         # Check for manual Enter (non-blocking)
         if sys.platform == "win32":
             import msvcrt
@@ -628,6 +644,10 @@ def main() -> None:
     print(f"[DEBUG] Looking for redirect to: {REDIRECT_URL_FINAL}")
     code = None
     for i in range(REDIRECT_TIMEOUT):
+        if chrome.poll() is not None:
+            print("[ERROR] Chrome was closed unexpectedly during redirect.")
+            sys.exit(1)
+
         url = cdp_find_code_url(port, preferred_prefix=REDIRECT_URL_FINAL, debug=(i == 0 or i % 10 == 0))
         if url:
             code = extract_auth_code(url)
@@ -657,6 +677,7 @@ def main() -> None:
         chrome.wait(timeout=5)
     except subprocess.TimeoutExpired:
         chrome.kill()
+        chrome.wait()  # prevent zombie process
 
     # Cleanup temp profile
     profile_dir = Path(tempfile.gettempdir()) / "kia-token-chrome-profile"
