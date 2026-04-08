@@ -169,6 +169,7 @@ def get_chrome_path() -> Optional[str]:
             "/usr/bin/google-chrome-stable",
             "/usr/bin/chromium",
             "/usr/bin/chromium-browser",
+            "/usr/bin/brave-browser",
         ],
         "Windows": [
             r"C:\Program Files\Google\Chrome\Application\chrome.exe",
